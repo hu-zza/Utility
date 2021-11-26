@@ -1,0 +1,166 @@
+#!/bin/bash
+
+checkSubDirectories() {
+  # Loop all sub-directories
+  for f in $dir
+  do
+  	# Only interested in directories
+  	[[ -d $f ]] || continue
+
+  	echo -e "${indentation}\e[2m------------------------------ \e[0m${f}"
+
+  	# Check if directory is a git repository
+  	if [[ -d "$f/.git" ]]
+  	then
+      clean=true
+  		cd $f
+
+      fetched=false
+
+      for ((i = 0; i < $maxFetch; i++))
+      do
+        if [[ $(git fetch 2>&1 | grep fatal -c) -eq 0 ]]
+        then
+          fetched=true
+          break
+        else
+          sleep 1
+        fi
+      done
+
+      if ! $fetched
+      then
+        echo -e "${indentation}\e[41mFetch error.\e[0m\n"
+        continue
+      fi
+
+      status=$(git status)
+
+
+      if [[ $(echo $status | grep "Untracked files:" -c) -ne 0 ]]
+  		then
+        clean=false
+  			echo -e "${indentation}\e[33mUntracked file(s).\e[0m"
+  		fi
+
+
+      if [[ $(echo $status | grep "Changes not staged for commit:" -c) -ne 0 ]]
+  		then
+        clean=false
+  			echo -e "${indentation}\e[33mNot staged changes.\e[0m"
+  		fi
+
+
+      if [[ $(echo $status | grep "Changes to be committed:" -c) -ne 0 ]]
+  		then
+        clean=false
+  			echo -e "${indentation}\e[33mStaged changes.\e[0m"
+  		fi
+
+
+      if $clean
+      then
+        echo -e "${indentation}\e[32mNothing to commit.\e[0m"
+      fi
+
+
+  		if [[ $(echo $status | grep "Your branch is ahead" -c) -ne 0 ]]
+  		then
+  			echo -e "${indentation}\e[31mUnpushed commit(s).\e[0m"
+  		fi
+
+
+  		if [[ $(echo $status | grep "Your branch is behind" -c) -ne 0 ]]
+  		then
+  			echo -e "${indentation}\e[31mUnpulled commit(s).\e[0m"
+        fetched=false
+
+        for ((i = 0; i < $maxFetch; i++))
+        do
+          if [[ $(git pull --ff-only 2>&1 | grep fatal -c) -eq 0 ]]
+          then
+            fetched=true
+            break
+          else
+            sleep 1
+          fi
+        done
+
+        if $fetched
+        then
+          echo -e "${indentation}\e[32mFast-forwarded.\e[0m"
+        else
+          echo -e "${indentation}\e[41mFetch error.\e[0m"
+        fi
+
+  		fi
+
+
+  		if [[ $(echo $status | grep "Your branch is up to date" -c) -ne 0 ]]
+  		then
+        echo -e "${indentation}\e[32mUp to date.\e[0m"
+  		fi
+
+  		cd ../
+  	else
+      echo -e "${indentation}\e[2mNot a git repository.\e[0m"
+      if [[ $level -lt $depth ]]
+      then
+        echo
+        ((level++))
+        indentation=$(printf %$((level*4))s)
+
+        oldDir=$dir
+        dir="$f/*"
+        checkSubDirectories
+        dir=$oldDir
+
+        ((level--))
+        indentation=$(printf %$((level*4))s)
+      fi
+  	fi
+
+    echo
+  done
+}
+
+
+
+echo
+
+depth=$1
+maxFetch=$2
+dir="$3"
+
+indentation=""
+level=0
+
+# No depth has been provided, use 1
+if [[ -z $depth ]]
+then
+    depth=1
+fi
+
+# No max. fetching trials has been provided, use 3
+if [[ -z $maxFetch ]]
+then
+    maxFetch=3
+fi
+
+# No directory has been provided, use current, else prepend with pwd
+if [[ -z $dir ]]
+then
+    dir="`pwd`"
+else
+    dir="`pwd`/$dir"
+fi
+
+# Make sure directory ends with "/"
+if [[ $dir != */ ]]
+then
+	dir="$dir/*"
+else
+	dir="$dir*"
+fi
+
+checkSubDirectories
