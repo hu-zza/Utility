@@ -1,0 +1,384 @@
+#!/bin/java --source 11
+
+package hu.zza.util;
+
+import java.io.*;
+import java.nio.file.*;
+import java.nio.file.attribute.FileAttribute;
+import java.util.*;
+import java.util.Map.Entry;
+import java.util.stream.*;
+import java.util.function.*;
+
+class Scratch {
+
+  private static final Path gitFolderRelativePath = Path.of("GIT");
+  private static final Path gitFormFolderRelativePath = Path.of("GitForm");
+
+  /**
+   * This Java script helps to save your GitHub repositories and their structure as YAML files and
+   * build this whole on different devices.
+   *
+   * <p>The first parameter is mandatory. If it is {@code save}, the script saves every GitHub
+   * project from {@code gitRoot} (now: /home/user/GIT) to {@code gitFormRoot} (now:
+   * /home/user/GIT/GitForm). You can share this folder and YAML files easily.
+   *
+   * <p>If the first parameter is {@code load}, the script builds the same folder structure for
+   * repositories and clones each and every GitHub project into the proper place (relative to the
+   * current {@code gitRoot}).
+   *
+   * <p>A short example: There are two GitHub repositories 'projectA' at {@code
+   * /home/userA/GIT/projectA} and 'projectB' at {@code /home/userA/GIT/B/projectB}, and this script
+   * is on {@code $PATH}.
+   *
+   * <p>If you call {@code git-form save}, this script creates a folder {@code
+   * /home/userA/GIT/GitForm} and saves the core data of {@code /home/userA/GIT/projectA} as {@code
+   * /home/userA/GIT/GitForm/projectA.yaml} and {@code /home/userA/GIT/B/projectB} as {@code
+   * /home/userA/GIT/GitForm/projectB.yaml}.
+   *
+   * <p>At this point you can share this arbitrary ways. After you have forwarded to another device,
+   * you have a {@code /home/userB/GIT/GitForm} folder with {@code projectA.yaml} and {@code
+   * projectB.yaml}.
+   *
+   * <p>If you call {@code git-form load}, this script build the missing folder structure (folder
+   * 'B') and clones the repositories. The result: 'projectA' at {@code /home/userB/GIT/projectA}
+   * and 'projectB' at {@code /home/userB/GIT/B/projectB}
+   *
+   * @param args
+   *     <p>[0] - mode:
+   *     <p>save (the projects to GitForm folder as YAML files)
+   *     <p>load (build everything from YAMLs of GitForm folder)
+   */
+  public static void main(String[] args) {
+    Path homePath = Path.of(System.getProperty("user.home"));
+    Path gitRoot = homePath.resolve(gitFolderRelativePath);
+    Path gitFormRoot = gitRoot.resolve(gitFormFolderRelativePath);
+
+    if (args.length == 0) {
+      System.err.println("Minimum one argument is required: git-form save / git-form load");
+
+    } else if ("save".equals(args[0])) {
+      new ProjectMapper(gitRoot, gitFormRoot).save();
+
+    } else if ("load".equals(args[0])) {
+      new ProjectBuilder(gitRoot, gitFormRoot).load();
+    }
+  }
+
+  /**
+   * An instance of this class is used to save GitHub repositories as GitForm YAML files ready to
+   * send to another device. With these files you can build the exact same structure (relative to
+   * {@code gitRoot}) of your GitHub projects with {@link ProjectBuilder#load()}.
+   */
+  private static class ProjectMapper {
+    private final Path gitRoot;
+    private final Path gitFormRoot;
+
+    private ProjectMapper(Path gitRoot, Path gitFormRoot) {
+      this.gitRoot = gitRoot;
+      this.gitFormRoot = gitFormRoot;
+    }
+
+    /**
+     * Saves every GitHub project from {@code gitRoot} to {@code gitFormRoot} as a YAML file. First,
+     * it prepares the output directory ({@code gitFormRoot}). Then filtering out the parsing errors
+     * (nulls) and the rest are processed by {@link ProjectBuilder#cloneIfAbsent(GitHubProject)}.
+     */
+    private void save() {
+      try {
+        prepareGitFormDirectory();
+        saveProjects(collectProjects());
+      } catch (IOException e) {
+        System.err.println("Cannot save projects:");
+        e.printStackTrace();
+        System.err.println();
+      }
+    }
+
+    /**
+     * Create {@code gitFormRoot} directory if it doesn't exist.
+     *
+     * @throws IOException if {@link Files#createDirectories(Path, FileAttribute[])} throws, or if
+     *     {@code gitFormRoot} exists but not a directory
+     */
+    private void prepareGitFormDirectory() throws IOException {
+      if (Files.exists(gitFormRoot)) {
+        if (!Files.isDirectory(gitFormRoot)) {
+          throw new IOException(gitFormRoot + " should be a directory.");
+        }
+      } else {
+        Files.createDirectories(gitFormRoot);
+      }
+    }
+
+    /**
+     * Searches for GitHub projects and returns with them as a {@link Stream}. First, walks through
+     * the {@code gitRoot}, then filters for directories with Git projects. Finally, parse the
+     * appropriate {@link Path paths} to {@link GitHubProject}. (And filter out non-GitHub projects:
+     * Without origin URL the parsing result is null.)
+     *
+     * @return {@link Stream<GitHubProject>} of {@link GitHubProject projects} found in {@code
+     *     gitRoot} and parsed successfully
+     * @throws IOException if {@link Files#walk(Path, FileVisitOption...)} throws
+     */
+    private Stream<GitHubProject> collectProjects() throws IOException {
+      return Files.walk(gitRoot)
+          .filter(Files::isDirectory)
+          .filter(this::isProject)
+          .map(this::createProjectFromPath)
+          .filter(Objects::nonNull);
+    }
+
+    /**
+     * Checks whether this is the root of a Git project or not. If it founds a {@code .git} folder,
+     * it assumes yes.
+     *
+     * @param path {@code Path} to the project root folder
+     * @return true if it's a possible Git project
+     */
+    private boolean isProject(Path path) {
+      try (var files = Files.list(path)) {
+
+        return files
+            .filter(Files::isDirectory)
+            .map(Path::getFileName)
+            .anyMatch(s -> s.toString().equals(".git"));
+
+      } catch (IOException e) {
+        System.err.println("It cannot be determined whether it is a project.");
+        return false;
+      }
+    }
+
+    /**
+     * Creates a {@link GitHubProject} from found project folder ({@link Path}) and extracted origin
+     * URL.
+     *
+     * @param projectRoot {@link Path} to the project root folder
+     * @return {@link GitHubProject} on success or null (if it cannot extract the origin URL)
+     */
+    private GitHubProject createProjectFromPath(Path projectRoot) {
+      String originUrl = getOriginUrl(projectRoot);
+
+      return originUrl == null
+          ? null
+          : new GitHubProject(
+              gitRoot.relativize(projectRoot),
+              originUrl.substring(originUrl.indexOf("url = ") + 6));
+    }
+
+    /**
+     * Extracts the origin URL from a Git config file.
+     *
+     * @param projectRoot {@link Path} to the project root folder
+     * @return the origin URL as a {@link String}
+     */
+    private String getOriginUrl(Path projectRoot) {
+      try (var lines = Files.lines(projectRoot.resolve(".git/config"))) {
+
+        return lines.filter(line -> line.contains("url = ")).findFirst().orElse(null);
+
+      } catch (IOException e) {
+        System.err.printf("Cannot retrieve origin URL of the project (%s)%n", projectRoot);
+        e.printStackTrace();
+        System.err.println();
+        return null;
+      }
+    }
+
+    /**
+     * Saves GitHub projects ({@link GitHubProject} instances) one by one.
+     *
+     * @param projects {@link Stream<GitHubProject>} of {@link GitHubProject}
+     */
+    private void saveProjects(Stream<GitHubProject> projects) {
+      projects.forEach(this::safelySaveGitHubProject);
+    }
+
+    /**
+     * Tries to save a {@link GitHubProject GitHub project} as a YAML file to {@code gitFormRoot}.
+     * If it fails, there are error messages, but nothing propagated.
+     *
+     * @param project a {@link GitHubProject} to save to {@code gitFormRoot}
+     */
+    private void safelySaveGitHubProject(GitHubProject project) {
+      try {
+        saveGitHubProject(project);
+      } catch (IOException e) {
+        System.err.printf(
+            "Cannot save project %s (%s)%n", project.getProjectName(), project.getProjectRoot());
+        e.printStackTrace();
+        System.err.println();
+      }
+    }
+
+    /**
+     * Writes out a {@link GitHubProject} as a YAML file to {@code gitFormRoot}.
+     *
+     * @param project a {@link GitHubProject} to save
+     * @throws IOException if {@link Files#write(Path, Iterable, OpenOption...)} throws
+     */
+    private void saveGitHubProject(GitHubProject project) throws IOException {
+      Files.write(gitFormRoot.resolve(project.getProjectName() + ".yaml"), project.getExportList());
+    }
+  }
+
+  /**
+   * Simple representation of a GitHub project ({@code originUrl}) with an arbitrary project name
+   * ({@code projectName}) and its local {@link Path path} ({@code projectRoot}) relative to the
+   * user's local GitHub root folder.
+   */
+  private static class GitHubProject {
+    private static final UnaryOperator<String> nameExtractor =
+        gitHubUrl -> gitHubUrl.substring(gitHubUrl.lastIndexOf('/') + 1, gitHubUrl.length() - 4);
+
+    private final String projectName;
+    private final Path projectRoot;
+    private final String originUrl;
+
+    private GitHubProject(Path projectRoot, String originUrl) {
+      this(nameExtractor.apply(originUrl), projectRoot, originUrl);
+    }
+
+    private GitHubProject(String projectName, Path projectRoot, String originUrl) {
+      this.projectName = projectName.strip();
+      this.projectRoot = projectRoot;
+      this.originUrl = originUrl.strip();
+    }
+
+    /**
+     * Parses a YAML file with a dictionary of at least these keys: name, local, origin
+     *
+     * @param projectInfoFile the {@link Path path} of the YAML file to parse
+     * @return {@link GitHubProject}
+     * @throws IOException if {@code Files.lines(projectInfoFile)} throws
+     */
+    private static GitHubProject parse(Path projectInfoFile) throws IOException {
+      return parse(Files.lines(projectInfoFile));
+    }
+
+    /**
+     * Parse a {@link GitHubProject} from a stream of strings. The necessary keys are: name, local,
+     * origin
+     *
+     * @param stringEntries {@link Stream<String>} of {@link String strings} in a "key: value"
+     *     format
+     * @return {@link GitHubProject}
+     */
+    private static GitHubProject parse(Stream<String> stringEntries) {
+      var map =
+          stringEntries
+              .map(line -> line.split(": ", 2))
+              .filter(arr -> arr.length == 2)
+              .map(arr -> Map.entry(arr[0], arr[1]))
+              .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
+
+      return new GitHubProject(map.get("name"), Path.of(map.get("local")), map.get("origin"));
+    }
+
+    /**
+     * Exports the current instance of {@link GitHubProject} ready to write out with {@link
+     * Files#write(Path, Iterable, OpenOption...)}
+     *
+     * @return {@link List<String>} with every field in a simple YAML dictionary format: "key:
+     *     value"
+     */
+    private List<String> getExportList() {
+      return List.of("name: " + projectName, "local: " + projectRoot, "origin: " + originUrl);
+    }
+
+    private String getProjectName() {
+      return projectName;
+    }
+
+    private Path getProjectRoot() {
+      return projectRoot;
+    }
+
+    private String getOriginUrl() {
+      return originUrl;
+    }
+  }
+
+  /**
+   * An instance of this class is used to synchronize* GitHub projects according to parsable GitForm
+   * YAML files representing {@link GitHubProject projects}. These files can be made by {@link
+   * ProjectMapper#save()}.
+   *
+   * <p>* Synchronization means in this case the building of the folder structure (relative to
+   * {@code gitRoot}) and the cloning of the GitHub repository. The real sync is on the backlog.
+   */
+  private static class ProjectBuilder {
+    private static final Runtime runtime = Runtime.getRuntime();
+    private static final Predicate<Path> isYaml = p -> p.toString().endsWith(".yaml");
+    private final Path gitRoot;
+    private final Path gitFormRoot;
+
+    private ProjectBuilder(Path gitRoot, Path gitFormRoot) {
+      this.gitRoot = gitRoot;
+      this.gitFormRoot = gitFormRoot;
+    }
+
+    /**
+     * Pulls every found, non-existent project and builds the proper folder structure for them.
+     * First, it tries to parse every YAML file in {@code gitFormRoot} to {@link GitHubProject}.
+     * Then it filters out the parsing errors (nulls) and the rest are processed by {@link
+     * ProjectBuilder#cloneIfAbsent(GitHubProject)}.
+     */
+    private void load() {
+      try (Stream<Path> files = Files.list(gitFormRoot)) {
+        files
+            .filter(isYaml)
+            .map(this::parseProjectFile)
+            .filter(Objects::nonNull)
+            .forEach(this::cloneIfAbsent);
+      } catch (IOException e) {
+        System.err.println("Cannot load from origin:");
+        e.printStackTrace();
+        System.err.println();
+      }
+    }
+
+    /**
+     * @param projectFile {@link Path} of a YAML file with a dictionary of at least these keys:
+     *     name, local, origin
+     * @return {@link GitHubProject}, or {@code null} if {@link IOException} occurs during file
+     *     handling
+     */
+    private GitHubProject parseProjectFile(Path projectFile) {
+      try {
+        return GitHubProject.parse(projectFile);
+      } catch (IOException ignored) {
+        return null;
+      }
+    }
+
+    /**
+     * If the given GitHub project ({@link GitHubProject#getOriginUrl()}) doesn't exist at the
+     * specific location ({@link GitHubProject#getProjectRoot()}) it tries to clone. The project
+     * location is always relative to the {@code gitRoot}. If the parent directories don't exist, it
+     * creates them first.
+     *
+     * @param gitHubProject the instance of {@link GitHubProject} representing a GitHub project to
+     *     clone
+     */
+    private void cloneIfAbsent(GitHubProject gitHubProject) {
+      try {
+        Path rootPath = gitRoot.resolve(gitHubProject.getProjectRoot());
+        if (Files.notExists(rootPath)) {
+
+          Files.createDirectories(rootPath.getParent());
+          runtime.exec(String.format("git clone %s %s", gitHubProject.getOriginUrl(), rootPath));
+        }
+      } catch (IOException e) {
+        System.err.printf(
+            "Cannot clone project %s%n\tLocal: %s%n\tOrigin: %s%n%n",
+            gitHubProject.getProjectName(),
+            gitHubProject.getProjectRoot(),
+            gitHubProject.getOriginUrl());
+        e.printStackTrace();
+        System.err.println();
+      }
+    }
+  }
+}
