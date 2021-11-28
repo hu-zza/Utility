@@ -54,6 +54,7 @@ class Scratch {
     Path homePath = Path.of(System.getProperty("user.home"));
     Path gitRoot = homePath.resolve(gitFolderRelativePath);
     Path gitFormRoot = gitRoot.resolve(gitFormFolderRelativePath);
+    System.out.println();
 
     if (args.length == 0) {
       System.err.println("Minimum one argument is required: git-form save / git-form load");
@@ -127,14 +128,15 @@ class Scratch {
      *     gitRoot} and parsed successfully
      * @throws IOException if {@link Files#walk(Path, FileVisitOption...)} throws
      */
-    private Stream<GitHubProject> collectProjects() throws IOException {
+    private List<GitHubProject> collectProjects() throws IOException {
       try (Stream<Path> files = Files.walk(gitRoot)) {
 
         return files
             .filter(Files::isDirectory)
             .filter(this::isProject)
             .map(this::createProjectFromPath)
-            .filter(Objects::nonNull);
+            .filter(Objects::nonNull)
+            .collect(Collectors.toList());
       }
     }
 
@@ -200,7 +202,7 @@ class Scratch {
      *
      * @param projects {@link Stream<GitHubProject>} of {@link GitHubProject}
      */
-    private void saveProjects(Stream<GitHubProject> projects) {
+    private void saveProjects(List<GitHubProject> projects) {
       try {
         projects.forEach(this::safelySaveGitHubProject);
       } catch (IllegalStateException ignored) {
