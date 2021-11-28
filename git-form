@@ -7,6 +7,7 @@ import java.nio.file.*;
 import java.nio.file.attribute.FileAttribute;
 import java.util.*;
 import java.util.Map.Entry;
+import java.util.concurrent.*;
 import java.util.stream.*;
 import java.util.function.*;
 
@@ -29,16 +30,16 @@ class Scratch {
    *
    * <p>A short example: There are two GitHub repositories 'projectA' at {@code
    * /home/userA/GIT/projectA} and 'projectB' at {@code /home/userA/GIT/B/projectB}, and this script
-   * is on {@code $PATH}.
+   * is on the {@code $PATH}.
    *
    * <p>If you call {@code git-form save}, this script creates a folder {@code
    * /home/userA/GIT/GitForm} and saves the core data of {@code /home/userA/GIT/projectA} as {@code
-   * /home/userA/GIT/GitForm/projectA.yaml} and {@code /home/userA/GIT/B/projectB} as {@code
-   * /home/userA/GIT/GitForm/projectB.yaml}.
+   * /home/userA/GIT/GitForm/projectA_<hash>.yaml} and {@code /home/userA/GIT/B/projectB} as {@code
+   * /home/userA/GIT/GitForm/projectB_<hash>.yaml}.
    *
    * <p>At this point you can share this arbitrary ways. After you have forwarded to another device,
-   * you have a {@code /home/userB/GIT/GitForm} folder with {@code projectA.yaml} and {@code
-   * projectB.yaml}.
+   * you have a {@code /home/userB/GIT/GitForm} folder with {@code projectA_<hash>.yaml} and {@code
+   * projectB_<hash>.yaml}.
    *
    * <p>If you call {@code git-form load}, this script build the missing folder structure (folder
    * 'B') and clones the repositories. The result: 'projectA' at {@code /home/userB/GIT/projectA}
@@ -73,10 +74,12 @@ class Scratch {
   private static class ProjectMapper {
     private final Path gitRoot;
     private final Path gitFormRoot;
+    private final List<String> additionalInfo;
 
-    private ProjectMapper(Path gitRoot, Path gitFormRoot) {
+    public ProjectMapper(Path gitRoot, Path gitFormRoot) {
       this.gitRoot = gitRoot;
       this.gitFormRoot = gitFormRoot;
+      this.additionalInfo = new ArrayList<>();
     }
 
     /**
@@ -84,14 +87,17 @@ class Scratch {
      * it prepares the output directory ({@code gitFormRoot}). Then filtering out the parsing errors
      * (nulls) and the rest are processed by {@link ProjectBuilder#cloneIfAbsent(GitHubProject)}.
      */
-    private void save() {
+    public void save() {
       try {
+        additionalInfo.clear();
         prepareGitFormDirectory();
         saveProjects(collectProjects());
       } catch (IOException e) {
         System.err.println("Cannot save projects:");
         e.printStackTrace();
         System.err.println();
+      } finally {
+        printAdditionalInfo();
       }
     }
 
@@ -122,11 +128,14 @@ class Scratch {
      * @throws IOException if {@link Files#walk(Path, FileVisitOption...)} throws
      */
     private Stream<GitHubProject> collectProjects() throws IOException {
-      return Files.walk(gitRoot)
-          .filter(Files::isDirectory)
-          .filter(this::isProject)
-          .map(this::createProjectFromPath)
-          .filter(Objects::nonNull);
+      try (Stream<Path> files = Files.walk(gitRoot)) {
+
+        return files
+            .filter(Files::isDirectory)
+            .filter(this::isProject)
+            .map(this::createProjectFromPath)
+            .filter(Objects::nonNull);
+      }
     }
 
     /**
@@ -137,7 +146,7 @@ class Scratch {
      * @return true if it's a possible Git project
      */
     private boolean isProject(Path path) {
-      try (var files = Files.list(path)) {
+      try (Stream<Path> files = Files.list(path)) {
 
         return files
             .filter(Files::isDirectory)
@@ -145,7 +154,7 @@ class Scratch {
             .anyMatch(s -> s.toString().equals(".git"));
 
       } catch (IOException e) {
-        System.err.println("It cannot be determined whether it is a project.");
+        System.err.printf("It cannot be determined whether %s is a project.%n", path);
         return false;
       }
     }
@@ -174,12 +183,12 @@ class Scratch {
      * @return the origin URL as a {@link String}
      */
     private String getOriginUrl(Path projectRoot) {
-      try (var lines = Files.lines(projectRoot.resolve(".git/config"))) {
+      try (Stream<String> lines = Files.lines(projectRoot.resolve(".git/config"))) {
 
         return lines.filter(line -> line.contains("url = ")).findFirst().orElse(null);
 
       } catch (IOException e) {
-        System.err.printf("Cannot retrieve origin URL of the project (%s)%n", projectRoot);
+        System.err.printf("Cannot retrieve origin URL of the project: %s%n", projectRoot);
         e.printStackTrace();
         System.err.println();
         return null;
@@ -192,7 +201,11 @@ class Scratch {
      * @param projects {@link Stream<GitHubProject>} of {@link GitHubProject}
      */
     private void saveProjects(Stream<GitHubProject> projects) {
-      projects.forEach(this::safelySaveGitHubProject);
+      try {
+        projects.forEach(this::safelySaveGitHubProject);
+      } catch (IllegalStateException ignored) {
+        System.out.println("There is no project to save.");
+      }
     }
 
     /**
@@ -204,9 +217,10 @@ class Scratch {
     private void safelySaveGitHubProject(GitHubProject project) {
       try {
         saveGitHubProject(project);
+      } catch (FileAlreadyExistsException ignored) {
+        additionalInfo.add("Project already exists: " + project.getProjectRoot());
       } catch (IOException e) {
-        System.err.printf(
-            "Cannot save project %s (%s)%n", project.getProjectName(), project.getProjectRoot());
+        System.err.printf("Cannot save project: %s%n", project.getProjectRoot());
         e.printStackTrace();
         System.err.println();
       }
@@ -219,7 +233,25 @@ class Scratch {
      * @throws IOException if {@link Files#write(Path, Iterable, OpenOption...)} throws
      */
     private void saveGitHubProject(GitHubProject project) throws IOException {
-      Files.write(gitFormRoot.resolve(project.getProjectName() + ".yaml"), project.getExportList());
+      Files.write(
+          gitFormRoot.resolve(
+              String.format("%s_%d.yaml", project.getProjectName(), project.hashCode())),
+          project.getExportList(),
+          StandardOpenOption.CREATE_NEW);
+
+      System.out.printf("Project saved: %s%n%n", project.getProjectRoot());
+    }
+
+    /** Prints additional information about the running of {@link ProjectBuilder#load()}. */
+    private void printAdditionalInfo() {
+      System.out.print("Additional info: ");
+
+      if (additionalInfo.isEmpty()) {
+        System.out.println("-");
+      } else {
+        System.out.println(System.lineSeparator());
+        additionalInfo.forEach(System.out::println);
+      }
     }
   }
 
@@ -236,11 +268,11 @@ class Scratch {
     private final Path projectRoot;
     private final String originUrl;
 
-    private GitHubProject(Path projectRoot, String originUrl) {
+    public GitHubProject(Path projectRoot, String originUrl) {
       this(nameExtractor.apply(originUrl), projectRoot, originUrl);
     }
 
-    private GitHubProject(String projectName, Path projectRoot, String originUrl) {
+    public GitHubProject(String projectName, Path projectRoot, String originUrl) {
       this.projectName = projectName.strip();
       this.projectRoot = projectRoot;
       this.originUrl = originUrl.strip();
@@ -253,8 +285,10 @@ class Scratch {
      * @return {@link GitHubProject}
      * @throws IOException if {@code Files.lines(projectInfoFile)} throws
      */
-    private static GitHubProject parse(Path projectInfoFile) throws IOException {
-      return parse(Files.lines(projectInfoFile));
+    public static GitHubProject parse(Path projectInfoFile) throws IOException {
+      try (Stream<String> lines = Files.lines(projectInfoFile)) {
+        return parse(lines);
+      }
     }
 
     /**
@@ -265,7 +299,7 @@ class Scratch {
      *     format
      * @return {@link GitHubProject}
      */
-    private static GitHubProject parse(Stream<String> stringEntries) {
+    public static GitHubProject parse(Stream<String> stringEntries) {
       var map =
           stringEntries
               .map(line -> line.split(": ", 2))
@@ -283,19 +317,36 @@ class Scratch {
      * @return {@link List<String>} with every field in a simple YAML dictionary format: "key:
      *     value"
      */
-    private List<String> getExportList() {
+    public List<String> getExportList() {
       return List.of("name: " + projectName, "local: " + projectRoot, "origin: " + originUrl);
     }
 
-    private String getProjectName() {
+    @Override
+    public boolean equals(Object o) {
+      if (this == o) {
+        return true;
+      }
+      if (o == null || getClass() != o.getClass()) {
+        return false;
+      }
+      GitHubProject that = (GitHubProject) o;
+      return Objects.equals(projectRoot, that.projectRoot);
+    }
+
+    @Override
+    public int hashCode() {
+      return Objects.hash(projectRoot);
+    }
+
+    public String getProjectName() {
       return projectName;
     }
 
-    private Path getProjectRoot() {
+    public Path getProjectRoot() {
       return projectRoot;
     }
 
-    private String getOriginUrl() {
+    public String getOriginUrl() {
       return originUrl;
     }
   }
@@ -313,8 +364,11 @@ class Scratch {
     private static final Predicate<Path> isYaml = p -> p.toString().endsWith(".yaml");
     private final Path gitRoot;
     private final Path gitFormRoot;
+    private final Map<String, Future<Boolean>> results = new HashMap<>();
+    private final Supplier<Boolean> isLoadCompleted =
+        () -> results.values().stream().allMatch(Future::isDone);
 
-    private ProjectBuilder(Path gitRoot, Path gitFormRoot) {
+    public ProjectBuilder(Path gitRoot, Path gitFormRoot) {
       this.gitRoot = gitRoot;
       this.gitFormRoot = gitFormRoot;
     }
@@ -325,13 +379,15 @@ class Scratch {
      * Then it filters out the parsing errors (nulls) and the rest are processed by {@link
      * ProjectBuilder#cloneIfAbsent(GitHubProject)}.
      */
-    private void load() {
+    public void load() {
       try (Stream<Path> files = Files.list(gitFormRoot)) {
+        results.clear();
         files
             .filter(isYaml)
             .map(this::parseProjectFile)
             .filter(Objects::nonNull)
             .forEach(this::cloneIfAbsent);
+        printResults();
       } catch (IOException e) {
         System.err.println("Cannot load from origin:");
         e.printStackTrace();
@@ -359,25 +415,54 @@ class Scratch {
      * location is always relative to the {@code gitRoot}. If the parent directories don't exist, it
      * creates them first.
      *
-     * @param gitHubProject the instance of {@link GitHubProject} representing a GitHub project to
-     *     clone
+     * @param project the instance of {@link GitHubProject} representing a GitHub project to clone
      */
-    private void cloneIfAbsent(GitHubProject gitHubProject) {
+    private void cloneIfAbsent(GitHubProject project) {
       try {
-        Path rootPath = gitRoot.resolve(gitHubProject.getProjectRoot());
+        Path rootPath = gitRoot.resolve(project.getProjectRoot());
         if (Files.notExists(rootPath)) {
 
           Files.createDirectories(rootPath.getParent());
-          runtime.exec(String.format("git clone %s %s", gitHubProject.getOriginUrl(), rootPath));
+
+          results.put(
+              String.format("Project %%s:%n%s%n%n", project.getProjectRoot()),
+              runtime
+                  .exec(String.format("git clone %s %s", project.getOriginUrl(), rootPath))
+                  .onExit()
+                  .thenApply(f -> f.exitValue() == 0));
         }
       } catch (IOException e) {
         System.err.printf(
-            "Cannot clone project %s%n\tLocal: %s%n\tOrigin: %s%n%n",
-            gitHubProject.getProjectName(),
-            gitHubProject.getProjectRoot(),
-            gitHubProject.getOriginUrl());
+            "Cannot clone project %s%nOrigin: %s%n%n",
+            project.getProjectRoot(), project.getOriginUrl());
         e.printStackTrace();
         System.err.println();
+      }
+    }
+
+    /** Prints the results of {@link ProjectBuilder#load()} according to {@code results} Map. */
+    private void printResults() {
+      if (isLoadCompleted.get()) {
+        results.forEach(
+            (k, v) ->
+                System.out.printf(
+                    k, getBooleanFuture(v) ? "loaded successfully" : "loading failed"));
+      }
+    }
+
+    /**
+     * Retrieve the value of a {@link Future<Boolean>} safely. It returns false in case of
+     * exception, but as far as it used on completed {@link Future<Boolean>} instances, it is
+     * accurate.
+     *
+     * @param future a {@code Future<Boolean>} instance
+     * @return {@code future.get()} or {@code false} if an exception occurs
+     */
+    private Boolean getBooleanFuture(Future<Boolean> future) {
+      try {
+        return future.get();
+      } catch (InterruptedException | ExecutionException e) {
+        return false;
       }
     }
   }
