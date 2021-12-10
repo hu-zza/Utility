@@ -89,12 +89,12 @@ class Scratch {
   private static class ProjectMapper {
     private final Path gitRoot;
     private final Path gitFormRoot;
-    private final List<String> additionalInfo;
+    private final Map<String, StringBuilder> additionalInfo;
 
     public ProjectMapper(Path gitRoot, Path gitFormRoot) {
       this.gitRoot = gitRoot;
       this.gitFormRoot = gitFormRoot;
-      this.additionalInfo = new ArrayList<>();
+      this.additionalInfo = new HashMap<>();
     }
 
     /**
@@ -170,10 +170,17 @@ class Scratch {
             .anyMatch(s -> s.toString().equals(".git"));
 
       } catch (IOException e) {
-        System.err.printf("It cannot be determined whether %s is a project.%n", path);
+        appendAdditionalInfo("Cannot be determined whether it is a project:", path.toString());
         return false;
       }
     }
+
+    // TODO: JavaDoc
+    private void appendAdditionalInfo(String key, String value) {
+      additionalInfo.computeIfAbsent(key, k -> new StringBuilder());
+      additionalInfo.compute(key, (k, v) -> v.append("\t").append(value).append(System.lineSeparator()));
+    }
+
 
     /**
      * Creates a {@link GitHubProject} from found project folder ({@link Path}) and extracted origin
@@ -204,9 +211,7 @@ class Scratch {
         return lines.filter(line -> line.contains("url = ")).findFirst().orElse(null);
 
       } catch (IOException e) {
-        System.err.printf("Cannot retrieve origin URL of the project: %s%n", projectRoot);
-        e.printStackTrace();
-        System.err.println();
+        appendAdditionalInfo("Cannot retrieve origin URL:", projectRoot.toString());
         return null;
       }
     }
@@ -220,7 +225,7 @@ class Scratch {
       try {
         projects.forEach(this::safelySaveGitHubProject);
       } catch (IllegalStateException ignored) {
-        System.out.println("There is no project to save.");
+        System.err.println("There is no project to save.");
       }
     }
 
@@ -234,11 +239,9 @@ class Scratch {
       try {
         saveGitHubProject(project);
       } catch (FileAlreadyExistsException ignored) {
-        additionalInfo.add("Project already exists: " + project.getProjectRoot());
+        appendAdditionalInfo("Project already exists:", project.getProjectRoot().toString());
       } catch (IOException e) {
-        System.err.printf("Cannot save project: %s%n", project.getProjectRoot());
-        e.printStackTrace();
-        System.err.println();
+        appendAdditionalInfo("Cannot save project:", project.getProjectRoot().toString());
       }
     }
 
@@ -260,13 +263,12 @@ class Scratch {
 
     /** Prints additional information about the running of {@link ProjectBuilder#load()}. */
     private void printAdditionalInfo() {
-      System.out.print("Additional info: ");
+      System.out.print("ADDITIONAL INFO: ");
 
       if (additionalInfo.isEmpty()) {
         System.out.println("-");
       } else {
-        System.out.println(System.lineSeparator());
-        additionalInfo.forEach(System.out::println);
+        additionalInfo.entrySet().forEach(e -> System.out.printf("%n%s%n%n%s%n", e.getKey(), e.getValue()));
       }
     }
   }
