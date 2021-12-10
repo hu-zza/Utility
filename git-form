@@ -18,7 +18,7 @@ class Scratch {
 
   /**
    * This Java script helps to save your GitHub repositories and their structure as YAML files and
-   * build this whole on different devices.
+   * build this whole on different devices. More about this project: https://git.zza.hu/
    *
    * <p>The first parameter is mandatory. If it is {@code save}, the script saves every GitHub
    * project from {@code gitRoot} (now: /home/user/GIT) to {@code gitFormRoot} (now:
@@ -57,14 +57,28 @@ class Scratch {
     System.out.println();
 
     if (args.length == 0) {
-      System.err.println("Minimum one argument is required: git-form save / git-form load");
+      printHelp();
 
     } else if ("save".equals(args[0])) {
       new ProjectMapper(gitRoot, gitFormRoot).save();
 
     } else if ("load".equals(args[0])) {
       new ProjectBuilder(gitRoot, gitFormRoot).load();
+
+    } else {
+      printHelp();
     }
+  }
+
+  /** Prints help info about GitForm. */
+  private static void printHelp() {
+    System.out.printf("usage: git-form <command>%n%n");
+    System.out.printf("commands:%n");
+
+    String commandPattern = "\t%s\t\t%s%n";
+    System.out.printf(commandPattern, "save", "saves the projects to GitForm folder as YAML files");
+    System.out.printf(commandPattern, "load", "builds everything from YAMLs of GitForm folder");
+    System.out.printf("%nMore info: https://git.zza.hu/Utility%n%n");
   }
 
   /**
