@@ -1,0 +1,9 @@
+
+usage: git-form <command>
+
+commands:
+	save		saves the projects to GitForm folder as YAML files
+	load		builds everything from YAMLs of GitForm folder
+
+More info: https://git.zza.hu/Utility
+
