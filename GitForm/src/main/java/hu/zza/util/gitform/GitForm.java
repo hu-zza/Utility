@@ -7,8 +7,9 @@ public class GitForm {
   private static final Path gitFormFolderRelativePath = Path.of("GitForm");
 
   /**
-   * This Java script helps to save your GitHub repositories and their structure as YAML files and
-   * build this whole on different devices. More about this project: https://git.zza.hu/
+   * GitForm helps to save your GitHub repositories and their structure as YAML files and build this
+   * whole on different devices. More about this project:
+   * https://git.zza.hu/Utility/tree/main/GitForm
    *
    * <p>The first parameter is mandatory. If it is {@code save}, the script saves every GitHub
    * project from {@code gitRoot} (now: /home/user/GIT) to {@code gitFormRoot} (now:

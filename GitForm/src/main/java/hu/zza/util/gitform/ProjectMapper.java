@@ -8,9 +8,7 @@ import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.nio.file.StandardOpenOption;
 import java.nio.file.attribute.FileAttribute;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Objects;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -23,12 +21,12 @@ import java.util.stream.Stream;
 public class ProjectMapper {
   private final Path gitRoot;
   private final Path gitFormRoot;
-  private final Map<String, StringBuilder> additionalInfo;
+  private final ResultReport resultReport;
 
   public ProjectMapper(Path gitRoot, Path gitFormRoot) {
     this.gitRoot = gitRoot;
     this.gitFormRoot = gitFormRoot;
-    this.additionalInfo = new HashMap<>();
+    this.resultReport = new ResultReport();
   }
 
   /**
@@ -37,16 +35,17 @@ public class ProjectMapper {
    * (nulls) and the rest are processed by {@link ProjectBuilder#cloneIfAbsent(GitHubProject)}.
    */
   public void save() {
+    resultReport.clear();
+    resultReport.setMainObjective("Save GitHub projects");
+    
     try {
-      additionalInfo.clear();
       prepareGitFormDirectory();
       saveProjects(collectProjects());
+      resultReport.setSuccessful(true);
     } catch (IOException e) {
-      System.err.println("Cannot save projects:");
-      e.printStackTrace();
-      System.err.println();
+      resultReport.appendAdditionalInfo("Cannot save projects:", e.toString());
     } finally {
-      printAdditionalInfo();
+      resultReport.print();
     }
   }
 
@@ -101,19 +100,6 @@ public class ProjectMapper {
     }
   }
 
-  /** Prints additional information about the running of {@link ProjectBuilder#load()}. */
-  private void printAdditionalInfo() {
-    System.out.print("ADDITIONAL INFO: ");
-
-    if (additionalInfo.isEmpty()) {
-      System.out.println("-");
-    } else {
-      additionalInfo
-          .entrySet()
-          .forEach(e -> System.out.printf("%n%s%n%n%s%n", e.getKey(), e.getValue()));
-    }
-  }
-
   /**
    * Tries to save a {@link GitHubProject GitHub project} as a YAML file to {@code gitFormRoot}. If
    * it fails, there are error messages, but nothing propagated.
@@ -124,9 +110,11 @@ public class ProjectMapper {
     try {
       saveGitHubProject(project);
     } catch (FileAlreadyExistsException ignored) {
-      appendAdditionalInfo("Project already exists:", project.getProjectRoot().toString());
+      resultReport.appendAdditionalInfo(
+          "Project already exists:", project.getProjectRoot().toString());
     } catch (IOException e) {
-      appendAdditionalInfo("Cannot save project:", project.getProjectRoot().toString());
+      resultReport.appendAdditionalInfo(
+          "Cannot save project:", project.getProjectRoot().toString());
     }
   }
 
@@ -146,7 +134,8 @@ public class ProjectMapper {
           .anyMatch(s -> s.toString().equals(".git"));
 
     } catch (IOException e) {
-      appendAdditionalInfo("Cannot be determined whether it is a project:", path.toString());
+      resultReport.appendAdditionalInfo(
+          "Cannot be determined whether it is a project:", path.toString());
       return false;
     }
   }
@@ -183,13 +172,6 @@ public class ProjectMapper {
     System.out.printf("Project saved: %s%n%n", project.getProjectRoot());
   }
 
-  // TODO: JavaDoc
-  private void appendAdditionalInfo(String key, String value) {
-    additionalInfo.computeIfAbsent(key, k -> new StringBuilder());
-    additionalInfo.compute(
-        key, (k, v) -> v.append("\t").append(value).append(System.lineSeparator()));
-  }
-
   /**
    * Extracts the origin URL from a Git config file.
    *
@@ -202,7 +184,7 @@ public class ProjectMapper {
       return lines.filter(line -> line.contains("url = ")).findFirst().orElse(null);
 
     } catch (IOException e) {
-      appendAdditionalInfo("Cannot retrieve origin URL:", projectRoot.toString());
+      resultReport.appendAdditionalInfo("Cannot retrieve origin URL:", projectRoot.toString());
       return null;
     }
   }
