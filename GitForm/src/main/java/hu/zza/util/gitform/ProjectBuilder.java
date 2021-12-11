@@ -3,13 +3,16 @@ package hu.zza.util.gitform;
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
 import java.util.Objects;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Future;
 import java.util.function.Predicate;
-import java.util.function.Supplier;
 import java.util.stream.Stream;
 
 /**
@@ -25,13 +28,14 @@ public class ProjectBuilder {
   private static final Predicate<Path> isYaml = p -> p.toString().endsWith(".yaml");
   private final Path gitRoot;
   private final Path gitFormRoot;
-  private final Map<String, Future<Boolean>> results = new HashMap<>();
-  private final Supplier<Boolean> isLoadCompleted =
-      () -> results.values().stream().allMatch(Future::isDone);
+  private final Map<GitHubProject, CompletableFuture<Process>> results;
+  private final ResultReport resultReport;
 
   public ProjectBuilder(Path gitRoot, Path gitFormRoot) {
     this.gitRoot = gitRoot;
     this.gitFormRoot = gitFormRoot;
+    this.results = new HashMap<>();
+    this.resultReport = new ResultReport();
   }
 
   /**
@@ -41,18 +45,20 @@ public class ProjectBuilder {
    * ProjectBuilder#cloneIfAbsent(GitHubProject)}.
    */
   public void load() {
+    results.clear();
+    resultReport.setMainObjective("Load GitHub projects");
+
     try (Stream<Path> files = Files.list(gitFormRoot)) {
-      results.clear();
       files
           .filter(isYaml)
           .map(this::parseProjectFile)
           .filter(Objects::nonNull)
           .forEach(this::cloneIfAbsent);
-      printResults();
+      prepareResultReport();
     } catch (IOException e) {
-      System.err.println("Cannot load from origin:");
-      e.printStackTrace();
-      System.err.println();
+      resultReport.appendAdditionalInfo("Cannot load projects:", e.toString());
+    } finally{
+      resultReport.print();
     }
   }
 
@@ -86,41 +92,64 @@ public class ProjectBuilder {
         Files.createDirectories(rootPath.getParent());
 
         results.put(
-            String.format("Project %%s:%n%s%n%n", project.getProjectRoot()),
+            project,
             runtime
                 .exec(String.format("git clone %s %s", project.getOriginUrl(), rootPath))
-                .onExit()
-                .thenApply(f -> f.exitValue() == 0));
+                .onExit());
+      } else {
+        resultReport.appendAdditionalInfo(
+            "Project already exists:", project.getProjectRoot().toString());
       }
     } catch (IOException e) {
-      System.err.printf(
-          "Cannot clone project %s%nOrigin: %s%n%n",
-          project.getProjectRoot(), project.getOriginUrl());
-      e.printStackTrace();
-      System.err.println();
+      resultReport.appendAdditionalInfo(
+          "Cannot clone project:",
+          String.format("%s (%s)", project.getProjectRoot(), project.getOriginUrl()));
     }
   }
 
-  /** Prints the results of {@link ProjectBuilder#load()} according to {@code results} Map. */
-  private void printResults() {
-    if (isLoadCompleted.get()) {
-      results.forEach(
-          (k, v) ->
-              System.out.printf(k, getBooleanFuture(v) ? "loaded successfully" : "loading failed"));
+  /** Prepare the results of {@link ProjectBuilder#load()} according to {@code results} Map. */
+  private void prepareResultReport() {
+    List<GitHubProject> completed = new ArrayList<>();
+
+    while (!results.isEmpty()) {
+      for (var e : results.entrySet()) {
+        if (e.getValue().isDone()) {
+          completed.add(e.getKey());
+          appendToResultReport(e);
+          resultReport.appendResult(
+              String.format(
+                  "%s",
+                  isDoneSuccessfully(e.getValue()) ? "loaded successfully" : "loading failed"));
+        }
+      }
+      completed.forEach(results::remove);
+      completed.clear();
+    }
+    resultReport.setSuccessful(true);
+  }
+
+  private void appendToResultReport(Entry<GitHubProject, CompletableFuture<Process>> entry) {
+    String pathString = entry.getKey().getProjectRoot().toString();
+
+    if (isDoneSuccessfully(entry.getValue())) {
+      resultReport.appendResult(pathString);
+    } else {
+      resultReport.appendAdditionalInfo("Cannot load project:", pathString);
     }
   }
 
   /**
-   * Retrieve the value of a {@link Future<Boolean>} safely. It returns false in case of exception,
-   * but as far as it used on completed {@link Future<Boolean>} instances, it is accurate.
+   * Retrieve the processing success of a {@link Future<Process>} safely. It returns false in case
+   * of exception, but as far as it used on completed {@link Future<Process>} instances, it is
+   * accurate.
    *
-   * @param future a {@code Future<Boolean>} instance
-   * @return {@code future.get()} or {@code false} if an exception occurs
+   * @param future a {@code Future<Process>} instance
+   * @return {@code future.get().exitValue() == 0} or {@code false} if an exception occurs
    */
-  private Boolean getBooleanFuture(Future<Boolean> future) {
+  private boolean isDoneSuccessfully(Future<Process> future) {
     try {
-      return future.get();
-    } catch (InterruptedException | ExecutionException e) {
+      return future.get().exitValue() == 0;
+    } catch (ExecutionException | InterruptedException ignored) {
       return false;
     }
   }

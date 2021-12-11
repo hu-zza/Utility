@@ -9,7 +9,7 @@ public class GitForm {
   /**
    * GitForm helps to save your GitHub repositories and their structure as YAML files and build this
    * whole on different devices. More about this project:
-   * https://git.zza.hu/Utility/tree/main/GitForm
+   * https://zza.hu/_util/GitForm
    *
    * <p>The first parameter is mandatory. If it is {@code save}, the script saves every GitHub
    * project from {@code gitRoot} (now: /home/user/GIT) to {@code gitFormRoot} (now:
@@ -69,6 +69,6 @@ public class GitForm {
     String commandPattern = "\t%s\t\t%s%n";
     System.out.printf(commandPattern, "save", "saves the projects to GitForm folder as YAML files");
     System.out.printf(commandPattern, "load", "builds everything from YAMLs of GitForm folder");
-    System.out.printf("%nMore info: https://git.zza.hu/Utility%n%n");
+    System.out.printf("%nMore info: https://zza.hu/_util/GitForm%n%n");
   }
 }

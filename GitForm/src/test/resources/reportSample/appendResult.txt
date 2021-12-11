@@ -1,0 +1,11 @@
+[fail] -
+
+RESULT
+	- A
+	- B
+	- C
+
+
+ADDITIONAL INFO
+	- No additional info
+

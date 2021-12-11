@@ -84,6 +84,6 @@ class GitFormTest {
   void runSave() {
     assertDoesNotThrow(() -> GitForm.main(new String[] {"save"}));
     updateExpectedOutputFromFile("save.txt");
-    assertSubstringOfOutputMatches(0, 72);
+    assertSubstringOfOutputMatches(0, 96);
   }
 }

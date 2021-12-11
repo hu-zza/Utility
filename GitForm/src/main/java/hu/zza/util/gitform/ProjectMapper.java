@@ -74,7 +74,7 @@ public class ProjectMapper {
     try {
       projects.forEach(this::safelySaveGitHubProject);
     } catch (IllegalStateException ignored) {
-      System.err.println("There is no project to save.");
+      resultReport.appendResult("There is no project to save.");
     }
   }
 
@@ -169,7 +169,7 @@ public class ProjectMapper {
         project.getExportList(),
         StandardOpenOption.CREATE_NEW);
 
-    System.out.printf("Project saved: %s%n%n", project.getProjectRoot());
+    resultReport.appendResult(project.getProjectRoot().toString());
   }
 
   /**

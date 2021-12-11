@@ -1,0 +1,17 @@
+[fail] -
+
+RESULT
+	- No result
+
+
+ADDITIONAL INFO
+
+	One
+		- B
+
+	Two
+		- C
+
+	Zero
+		- A
+

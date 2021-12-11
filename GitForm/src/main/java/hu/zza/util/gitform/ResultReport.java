@@ -1,15 +1,20 @@
 package hu.zza.util.gitform;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.Map.Entry;
+import java.util.stream.Collectors;
 
 public class ResultReport {
   private String mainObjective = "-";
   private boolean successful = false;
+  private final List<String> mainResults = new ArrayList<>();
   private final Map<String, StringBuilder> additionalInfo = new HashMap<>();
 
   public ResultReport() {
-    this("");
+    this("-");
   }
 
   public ResultReport(String mainObjective) {
@@ -33,44 +38,81 @@ public class ResultReport {
   }
 
   /**
-   * Appends the {@code value} as a line of information to the section {@code key}.
+   * Appends {@code result} to the main list.
    *
-   * @param key the title of the section of {@code additionalInfo}
-   * @param value one line of additional information
+   * @param result one line of cardinal information
    */
-  public void appendAdditionalInfo(String key, String value) {
-    additionalInfo.computeIfAbsent(key, k -> new StringBuilder());
-    additionalInfo.computeIfPresent(key, (k, v) -> v.append(String.format("\t%s%n", value)));
+  public void appendResult(String result) {
+    mainResults.add(result);
   }
 
-  // TODO: JavaDoc
-  /** Prints additional information about the running of {@link ProjectBuilder#load()}. */
+  /**
+   * Appends the {@code info} to the {@code section}.
+   *
+   * @param section the title of the section
+   * @param info one line of additional information
+   */
+  public void appendAdditionalInfo(String section, String info) {
+    additionalInfo.computeIfAbsent(section, k -> new StringBuilder());
+    additionalInfo.computeIfPresent(section, (k, v) -> v.append(String.format("\t\t- %s%n", info)));
+  }
+
+  /**
+   * Prints {@link ResultReport} to the console as a formatted summary given by {@link
+   * ResultReport#toString()}.
+   */
   public void print() {
     System.out.println(this);
   }
 
-  // TODO: JavaDoc
+  /**
+   * Returns the {@link String} representation of {@link ResultReport} as a formatted, multi-line
+   * summary. The aim is to provide a nice, human-readable text ready to print out to the console or
+   * concatenate with other formatted outputs.
+   *
+   * @return the formatted summary of {@link ResultReport}
+   */
   @Override
   public String toString() {
     return String.format(
-        "[%s] %s%n%n%s%n%n",
-        successful ? "done" : "fail", mainObjective, getAdditionalInfoAsString());
+        "[%s] %s%n%n%S%n%s%n%n%S%n%s%n",
+        successful ? "done" : "fail",
+        mainObjective,
+        "Result",
+        getMainResultsAsString(),
+        "Additional info",
+        getAdditionalInfoAsString());
   }
 
+  /** @return a multi-line {@link String} contains the whole {@code mainResults} list */
+  private String getMainResultsAsString() {
+
+    if (mainResults.isEmpty()) {
+      return "\t- No result" + System.lineSeparator();
+    }
+    return mainResults.stream()
+        .map(s -> "\t- " + s + System.lineSeparator())
+        .collect(Collectors.joining());
+  }
+
+  /** @return a multi-line {@link String} contains the whole {@code additionalInfo} map */
   private String getAdditionalInfoAsString() {
-    StringBuilder stringBuilder = new StringBuilder("ADDITIONAL INFO: ");
 
     if (additionalInfo.isEmpty()) {
-      stringBuilder.append("-");
-    } else {
-      additionalInfo.forEach((k, v) -> stringBuilder.append(String.format("%n%s%n%n%s%n%n", k, v)));
+      return "\t- No additional info" + System.lineSeparator();
     }
+    var stringBuilder = new StringBuilder();
+    additionalInfo.entrySet().stream()
+        .sorted(Entry.comparingByKey())
+        .forEach(
+            e -> stringBuilder.append(String.format("%n\t%s%n%s", e.getKey(), e.getValue())));
     return stringBuilder.toString();
   }
 
   public void clear() {
     mainObjective = "-";
     successful = false;
+    mainResults.clear();
     additionalInfo.clear();
   }
 }
