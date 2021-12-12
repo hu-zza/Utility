@@ -1,0 +1,11 @@
+<component name="ArtifactManager">
+  <artifact type="jar" name="GitForm">
+    <output-path>$PROJECT_DIR$/out/artifacts/GitForm</output-path>
+    <root id="archive" name="GitForm.jar">
+      <element id="module-output" name="GitForm.main" />
+      <element id="directory" name="META-INF">
+        <element id="file-copy" path="$PROJECT_DIR$/META-INF/MANIFEST.MF" />
+      </element>
+    </root>
+  </artifact>
+</component>
