@@ -57,7 +57,7 @@ public class ProjectBuilder {
       prepareResultReport();
     } catch (IOException e) {
       resultReport.appendAdditionalInfo("Cannot load projects:", e.toString());
-    } finally{
+    } finally {
       resultReport.print();
     }
   }

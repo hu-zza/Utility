@@ -59,7 +59,7 @@ class GitFormTest {
   void runLoad() {
     assertDoesNotThrow(() -> GitForm.main(new String[] {"load"}));
     updateExpectedOutputFromFile("load.txt");
-    assertSubstringOfOutputMatches(0, 1);
+    assertSubstringOfOutputMatches(0, 96);
   }
 
   private void assertSubstringOfOutputMatches(int begin, int end) {

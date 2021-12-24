@@ -104,8 +104,7 @@ public class ResultReport {
     var stringBuilder = new StringBuilder();
     additionalInfo.entrySet().stream()
         .sorted(Entry.comparingByKey())
-        .forEach(
-            e -> stringBuilder.append(String.format("%n\t%s%n%s", e.getKey(), e.getValue())));
+        .forEach(e -> stringBuilder.append(String.format("%n\t%s%n%s", e.getKey(), e.getValue())));
     return stringBuilder.toString();
   }
 

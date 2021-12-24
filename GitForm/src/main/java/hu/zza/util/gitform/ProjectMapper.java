@@ -37,7 +37,7 @@ public class ProjectMapper {
   public void save() {
     resultReport.clear();
     resultReport.setMainObjective("Save GitHub projects");
-    
+
     try {
       prepareGitFormDirectory();
       saveProjects(collectProjects());
