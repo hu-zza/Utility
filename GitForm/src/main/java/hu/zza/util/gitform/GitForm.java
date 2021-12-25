@@ -1,10 +1,7 @@
 package hu.zza.util.gitform;
 
-import java.nio.file.Path;
-
 public class GitForm {
-  private static final Path gitFolderRelativePath = Path.of("GIT");
-  private static final Path gitFormFolderRelativePath = Path.of("GitForm");
+  private static final Settings settings = new Settings();
 
   /**
    * GitForm helps to save your GitHub repositories and their structure as YAML files and build this
@@ -41,19 +38,17 @@ public class GitForm {
    *     <p>load (build everything from YAMLs of GitForm folder)
    */
   public static void main(String[] args) {
-    Path homePath = Path.of(System.getProperty("user.home"));
-    Path gitRoot = homePath.resolve(gitFolderRelativePath);
-    Path gitFormRoot = gitRoot.resolve(gitFormFolderRelativePath);
+    settings.init();
     System.out.println();
 
     if (args.length == 0) {
       printHelp();
 
     } else if ("save".equals(args[0])) {
-      new ProjectMapper(gitRoot, gitFormRoot).save();
+      new ProjectMapper(settings).save();
 
     } else if ("load".equals(args[0])) {
-      new ProjectBuilder(gitRoot, gitFormRoot).load();
+      new ProjectBuilder(settings).load();
 
     } else {
       printHelp();

@@ -26,16 +26,21 @@ import java.util.stream.Stream;
 public class ProjectBuilder {
   private static final Runtime runtime = Runtime.getRuntime();
   private static final Predicate<Path> isYaml = p -> p.toString().endsWith(".yaml");
+  private final Settings settings;
+  private final ResultReport resultReport;
   private final Path gitRoot;
   private final Path gitFormRoot;
-  private final Map<GitHubProject, CompletableFuture<Process>> results;
-  private final ResultReport resultReport;
+  private final Map<GitHubProject, CompletableFuture<Process>> results = new HashMap<>();
 
-  public ProjectBuilder(Path gitRoot, Path gitFormRoot) {
-    this.gitRoot = gitRoot;
-    this.gitFormRoot = gitFormRoot;
-    this.results = new HashMap<>();
-    this.resultReport = new ResultReport();
+  public ProjectBuilder(Settings settings) {
+    this(settings, new ResultReport());
+  }
+
+  public ProjectBuilder(Settings settings, ResultReport resultReport) {
+    this.settings = settings;
+    this.resultReport = resultReport;
+    gitRoot = settings.getGitRoot();
+    gitFormRoot = settings.getGitFormRoot();
   }
 
   /**

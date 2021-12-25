@@ -19,14 +19,20 @@ import java.util.stream.Stream;
  * gitRoot}) of your GitHub projects with {@link ProjectBuilder#load()}.
  */
 public class ProjectMapper {
+  private final Settings settings;
+  private final ResultReport resultReport;
   private final Path gitRoot;
   private final Path gitFormRoot;
-  private final ResultReport resultReport;
 
-  public ProjectMapper(Path gitRoot, Path gitFormRoot) {
-    this.gitRoot = gitRoot;
-    this.gitFormRoot = gitFormRoot;
-    this.resultReport = new ResultReport();
+  public ProjectMapper(Settings settings) {
+    this(settings, new ResultReport());
+  }
+
+  public ProjectMapper(Settings settings, ResultReport resultReport) {
+    this.settings = settings;
+    this.resultReport = resultReport;
+    gitRoot = settings.getGitRoot();
+    gitFormRoot = settings.getGitFormRoot();
   }
 
   /**

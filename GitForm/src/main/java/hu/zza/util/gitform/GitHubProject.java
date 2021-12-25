@@ -5,11 +5,8 @@ import java.nio.file.Files;
 import java.nio.file.OpenOption;
 import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
-import java.util.Map.Entry;
 import java.util.Objects;
 import java.util.function.UnaryOperator;
-import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -49,20 +46,14 @@ public class GitHubProject {
   }
 
   /**
-   * Parse a {@link GitHubProject} from a stream of strings. The necessary keys are: name, local,
+   * Parses a {@link GitHubProject} from a stream of strings. The necessary keys are: name, local,
    * origin
    *
    * @param stringEntries {@link Stream<String>} of {@link String strings} in a "key: value" format
    * @return {@link GitHubProject}
    */
   public static GitHubProject parse(Stream<String> stringEntries) {
-    var map =
-        stringEntries
-            .map(line -> line.split(": ", 2))
-            .filter(arr -> arr.length == 2)
-            .map(arr -> Map.entry(arr[0], arr[1]))
-            .collect(Collectors.toMap(Entry::getKey, Entry::getValue));
-
+    var map = YamlReader.parse(stringEntries);
     return new GitHubProject(map.get("name"), Path.of(map.get("local")), map.get("origin"));
   }
 
