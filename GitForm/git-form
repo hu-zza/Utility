@@ -359,10 +359,6 @@ class Scratch {
           if (e.getValue().isDone()) {
             completed.add(e.getKey());
             appendToResultReport(e);
-            resultReport.appendResult(
-                String.format(
-                    "%s",
-                    isDoneSuccessfully(e.getValue()) ? "loaded successfully" : "loading failed"));
           }
         }
         completed.forEach(results::remove);
@@ -493,10 +489,10 @@ class Scratch {
   }
 
   private static class ResultReport {
+    private final SortedSet<String> mainResults = new TreeSet<>();
+    private final Map<String, SortedSet<String>> additionalInfo = new HashMap<>();
     private String mainObjective = "-";
     private boolean successful = false;
-    private final List<String> mainResults = new ArrayList<>();
-    private final Map<String, StringBuilder> additionalInfo = new HashMap<>();
 
     public ResultReport() {
       this("-");
@@ -538,8 +534,8 @@ class Scratch {
      * @param info one line of additional information
      */
     public void appendAdditionalInfo(String section, String info) {
-      additionalInfo.computeIfAbsent(section, k -> new StringBuilder());
-      additionalInfo.computeIfPresent(section, (k, v) -> v.append(String.format("\t\t- %s%n", info)));
+      additionalInfo.computeIfAbsent(section, k -> new TreeSet<>());
+      additionalInfo.get(section).add(String.format("\t\t- %s%n", info));
     }
 
     /**
@@ -589,7 +585,10 @@ class Scratch {
       var stringBuilder = new StringBuilder();
       additionalInfo.entrySet().stream()
           .sorted(Entry.comparingByKey())
-          .forEach(e -> stringBuilder.append(String.format("%n\t%s%n%s", e.getKey(), e.getValue())));
+          .forEach(
+              e ->
+                  stringBuilder.append(
+                      String.format("%n\t%s%n%s", e.getKey(), String.join("", e.getValue()))));
       return stringBuilder.toString();
     }
 

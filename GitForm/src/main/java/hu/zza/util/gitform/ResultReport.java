@@ -1,17 +1,17 @@
 package hu.zza.util.gitform;
 
-import java.util.ArrayList;
 import java.util.HashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Map.Entry;
+import java.util.SortedSet;
+import java.util.TreeSet;
 import java.util.stream.Collectors;
 
 public class ResultReport {
+  private final SortedSet<String> mainResults = new TreeSet<>();
+  private final Map<String, SortedSet<String>> additionalInfo = new HashMap<>();
   private String mainObjective = "-";
   private boolean successful = false;
-  private final List<String> mainResults = new ArrayList<>();
-  private final Map<String, StringBuilder> additionalInfo = new HashMap<>();
 
   public ResultReport() {
     this("-");
@@ -53,8 +53,8 @@ public class ResultReport {
    * @param info one line of additional information
    */
   public void appendAdditionalInfo(String section, String info) {
-    additionalInfo.computeIfAbsent(section, k -> new StringBuilder());
-    additionalInfo.computeIfPresent(section, (k, v) -> v.append(String.format("\t\t- %s%n", info)));
+    additionalInfo.computeIfAbsent(section, k -> new TreeSet<>());
+    additionalInfo.get(section).add(String.format("\t\t- %s%n", info));
   }
 
   /**
@@ -104,7 +104,10 @@ public class ResultReport {
     var stringBuilder = new StringBuilder();
     additionalInfo.entrySet().stream()
         .sorted(Entry.comparingByKey())
-        .forEach(e -> stringBuilder.append(String.format("%n\t%s%n%s", e.getKey(), e.getValue())));
+        .forEach(
+            e ->
+                stringBuilder.append(
+                    String.format("%n\t%s%n%s", e.getKey(), String.join("", e.getValue()))));
     return stringBuilder.toString();
   }
 

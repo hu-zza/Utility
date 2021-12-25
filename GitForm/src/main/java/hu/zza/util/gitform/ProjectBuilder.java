@@ -116,10 +116,6 @@ public class ProjectBuilder {
         if (e.getValue().isDone()) {
           completed.add(e.getKey());
           appendToResultReport(e);
-          resultReport.appendResult(
-              String.format(
-                  "%s",
-                  isDoneSuccessfully(e.getValue()) ? "loaded successfully" : "loading failed"));
         }
       }
       completed.forEach(results::remove);
