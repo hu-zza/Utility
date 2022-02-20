@@ -1,0 +1,58 @@
+#!/bin/java --source 11
+
+package hu.zza.util;
+
+import java.io.*;
+import java.nio.file.*;
+import java.util.stream.*;
+
+class MergeJson {
+	public static void main(String... args) throws IOException {
+
+		Path inputDir = Path.of(args[0]);
+		Path outputDir = inputDir.resolve("out");
+		Path outputFile = outputDir.resolve("mergedOutput.json");
+		Path tmpFile = Files.createTempFile("mergedOutput-", ".json");
+
+		Files.writeString(tmpFile, "[\n");
+
+		try (var files = Files.list(inputDir)) {
+			var jsonList = files.filter(path -> path.toString().toLowerCase().endsWith(".json")).collect(Collectors.toList());
+
+			int lastIndex = jsonList.size() - 1;
+
+			IntStream.rangeClosed(0, lastIndex)
+				.mapToObj(i -> readString(jsonList.get(i)) + (i == lastIndex ? "\n" : ",\n"))
+				.forEach(s -> writeString(tmpFile, s));
+		}
+
+		Files.writeString(tmpFile, "]", StandardOpenOption.APPEND);
+		Files.createDirectories(outputDir);
+		Files.move(tmpFile, outputFile, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING);
+	}
+
+	private static String readString(Path path) {
+		String result;
+
+		try {
+
+			result = Files.readString(path);
+			return result.isBlank() ? "{}" : result;
+
+		} catch (IOException e) {
+			System.err.println(e);
+		}
+
+		return "{}";
+	}
+
+
+	private static void writeString(Path path, String out) {
+		try {
+			Files.writeString(path, out, StandardOpenOption.APPEND);
+		} catch (IOException e) {
+			System.err.println(e);
+		}
+	}
+}
+
